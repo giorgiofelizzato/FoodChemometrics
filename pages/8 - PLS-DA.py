@@ -738,7 +738,7 @@ with tab_train:
 
         # ---- Scores plot ----
         st.divider()
-        st.subheader("📈 PLS scores")
+        st.subheader("PLS scores")
 
         n_sc = res["x_scores"].shape[1]
         scores_df = pd.DataFrame(

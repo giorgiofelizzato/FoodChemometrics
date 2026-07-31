@@ -286,7 +286,8 @@ The grouping variable is used only for visualization.
 It can be categorical (text) or discrete numerical
 (e.g. 1, 2, 3 representing classes).
 
-Continuous numerical variables are excluded automatically.
+Continuous numerical variables are excluded automatically. 
+The list is in alphabetical order.
 """
 )
 
@@ -400,7 +401,7 @@ if "X_variables" in st.session_state:
     with col1:
 
 
-        st.subheader("🆔 Sample ID")
+        st.subheader("Sample ID")
 
         st.write(
 
@@ -412,7 +413,7 @@ if "X_variables" in st.session_state:
         )
 
 
-        st.subheader("🎯 Target variable")
+        st.subheader("Target variable")
 
         st.write(
 
@@ -428,7 +429,7 @@ if "X_variables" in st.session_state:
     with col2:
 
 
-        st.subheader("🏷 Grouping variable")
+        st.subheader("Grouping variable")
 
         st.write(
 
@@ -440,7 +441,7 @@ if "X_variables" in st.session_state:
         )
 
 
-        st.subheader("🔢 Number of predictors")
+        st.subheader("Number of predictors")
 
         st.write(
 
