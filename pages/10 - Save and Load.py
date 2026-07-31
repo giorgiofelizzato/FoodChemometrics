@@ -4,7 +4,6 @@ import pickle
 import io
 from datetime import datetime
 
-
 # =====================================================
 # CONFIGURATION
 # =====================================================
@@ -16,7 +15,6 @@ st.set_page_config(
 )
 
 st.title("Project Management")
-
 st.markdown(
     """
 Save your complete Food AI project into a single file
@@ -24,13 +22,11 @@ and reload it later to continue your analysis.
 """
 )
 
-
 # =====================================================
 # PROJECT VERSION
 # =====================================================
 
-PROJECT_VERSION = "1.2"
-
+PROJECT_VERSION = "1.3"
 
 # =====================================================
 # KEYS TO SAVE / RESTORE
@@ -87,8 +83,25 @@ DA_KEYS = [
     "da_test_results",
 ]
 
-# Keys that should NOT be pickled (widgets, file handles, etc.)
-# — everything else in the lists above is safe.
+PLSDA_KEYS = [
+    "plsda_model",
+    "plsda_le",
+    "plsda_class_labels",
+    "plsda_valid_codes",
+    "plsda_X_vars",
+    "plsda_y_var",
+    "plsda_n_lv_fit",
+    "plsda_scale_fit",
+    "plsda_train_idx",
+    "plsda_data_source_fit",
+    "plsda_train_results",
+    "plsda_test_results",
+    "plsda_grid_df",
+    "plsda_best_n_lv",
+    "plsda_vip",
+    "plsda_n_lv",
+    "plsda_cv_folds",
+]
 
 
 # =====================================================
@@ -104,7 +117,6 @@ def build_project():
     Collect all relevant information currently stored
     in Streamlit session state.
     """
-
     project = {
         # =================================================
         # METADATA
@@ -114,7 +126,6 @@ def build_project():
             "saved_at": datetime.now().isoformat(),
             "app": "Food AI App",
         },
-
         # =================================================
         # DATASETS
         # =================================================
@@ -122,12 +133,10 @@ def build_project():
         "raw_dataset": _safe_get("raw_dataset"),
         "preprocessed_dataset": _safe_get("preprocessed_dataset"),
         "preprocessed_X": _safe_get("preprocessed_X"),
-
         # =================================================
         # PREPROCESSING INFORMATION (from Save button)
         # =================================================
         "preprocessing_info": _safe_get("preprocessing_info", {}),
-
         # =================================================
         # PREPROCESSING SETTINGS (widget values)
         # =================================================
@@ -143,7 +152,6 @@ def build_project():
             "savgol_window": _safe_get("savgol_window"),
             "savgol_polyorder": _safe_get("savgol_polyorder"),
         },
-
         # =================================================
         # DATA SETUP
         # =================================================
@@ -153,7 +161,6 @@ def build_project():
             "y_variable": _safe_get("y_variable"),
             "group_variable": _safe_get("group_variable"),
         },
-
         # =================================================
         # TRAIN / TEST SPLIT
         # =================================================
@@ -171,7 +178,6 @@ def build_project():
                 "split_preprocessing_info"
             ),
         },
-
         # =================================================
         # DISCRIMINANT ANALYSIS (LDA / QDA)
         # =================================================
@@ -186,7 +192,28 @@ def build_project():
             "da_train_results": _safe_get("da_train_results"),
             "da_test_results": _safe_get("da_test_results"),
         },
-
+        # =================================================
+        # PLS-DA
+        # =================================================
+        "pls_da": {
+            "plsda_model": _safe_get("plsda_model"),
+            "plsda_le": _safe_get("plsda_le"),
+            "plsda_class_labels": _safe_get("plsda_class_labels"),
+            "plsda_valid_codes": _safe_get("plsda_valid_codes"),
+            "plsda_X_vars": _safe_get("plsda_X_vars"),
+            "plsda_y_var": _safe_get("plsda_y_var"),
+            "plsda_n_lv_fit": _safe_get("plsda_n_lv_fit"),
+            "plsda_scale_fit": _safe_get("plsda_scale_fit"),
+            "plsda_train_idx": _safe_get("plsda_train_idx"),
+            "plsda_data_source_fit": _safe_get("plsda_data_source_fit"),
+            "plsda_train_results": _safe_get("plsda_train_results"),
+            "plsda_test_results": _safe_get("plsda_test_results"),
+            "plsda_grid_df": _safe_get("plsda_grid_df"),
+            "plsda_best_n_lv": _safe_get("plsda_best_n_lv"),
+            "plsda_vip": _safe_get("plsda_vip"),
+            "plsda_n_lv": _safe_get("plsda_n_lv"),
+            "plsda_cv_folds": _safe_get("plsda_cv_folds"),
+        },
         # =================================================
         # FUTURE / GENERIC SECTIONS
         # =================================================
@@ -199,7 +226,6 @@ def build_project():
         "current_file": _safe_get("current_file"),
         "current_sheet": _safe_get("current_sheet"),
     }
-
     return project
 
 
@@ -207,7 +233,6 @@ def restore_project(project):
     """
     Restore all project information into Streamlit session state.
     """
-
     # -------------------------------------------------
     # DATASETS
     # -------------------------------------------------
@@ -288,6 +313,17 @@ def restore_project(project):
             del st.session_state[key]
 
     # -------------------------------------------------
+    # PLS-DA
+    # -------------------------------------------------
+    plsda = project.get("pls_da", {})
+    for key in PLSDA_KEYS:
+        val = plsda.get(key)
+        if val is not None:
+            st.session_state[key] = val
+        elif key in st.session_state:
+            del st.session_state[key]
+
+    # -------------------------------------------------
     # GENERIC / FUTURE SECTIONS
     # -------------------------------------------------
     for section in [
@@ -301,8 +337,10 @@ def restore_project(project):
 
     if project.get("history") is not None:
         st.session_state["history"] = project["history"]
+
     if project.get("current_file") is not None:
         st.session_state["current_file"] = project["current_file"]
+
     if project.get("current_sheet") is not None:
         st.session_state["current_sheet"] = project["current_sheet"]
 
@@ -326,7 +364,6 @@ if "dataset" in st.session_state and isinstance(
     st.session_state["dataset"], pd.DataFrame
 ):
     df = st.session_state["dataset"]
-
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Samples", df.shape[0])
     c2.metric("Variables", df.shape[1])
@@ -338,7 +375,6 @@ if "dataset" in st.session_state and isinstance(
         "Target (y)",
         _safe_get("y_variable") or "—",
     )
-
     st.success("Dataset loaded.")
 else:
     st.warning("No dataset is currently loaded.")
@@ -372,6 +408,11 @@ if "da_model" in st.session_state:
     mtype = _safe_get("da_model_type", "?")
     st.info(f"Discriminant model fitted: **{mtype}**")
 
+# --- PLS-DA model ---
+if "plsda_model" in st.session_state:
+    nlv = _safe_get("plsda_n_lv_fit", "?")
+    st.info(f"PLS-DA model fitted with **{nlv}** latent variables")
+
 
 # =====================================================
 # PROJECT CONFIGURATION SUMMARY
@@ -399,7 +440,6 @@ with col2:
 # =====================================================
 
 prep = _safe_get("preprocessing_info", {})
-
 if prep:
     st.divider()
     st.subheader("Preprocessing")
@@ -434,7 +474,6 @@ if prep:
 # =====================================================
 
 split_info = _safe_get("split_info", {})
-
 if split_info:
     st.divider()
     st.subheader("Train / Test Split")
@@ -478,6 +517,46 @@ if "da_model" in st.session_state:
 
 
 # =====================================================
+# PLS-DA STATUS
+# =====================================================
+
+if "plsda_model" in st.session_state:
+    st.divider()
+    st.subheader("PLS-DA")
+
+    plsda_rows = [
+        ("Latent variables (fit)", _safe_get("plsda_n_lv_fit")),
+        ("Best LV (grid search)", _safe_get("plsda_best_n_lv")),
+        ("X variables", len(_safe_get("plsda_X_vars") or [])),
+        ("Target", _safe_get("plsda_y_var")),
+        ("Classes", len(_safe_get("plsda_class_labels") or [])),
+        ("Data source", _safe_get("plsda_data_source_fit")),
+        ("CV folds", _safe_get("plsda_cv_folds")),
+        (
+            "Grid search",
+            "Yes" if "plsda_grid_df" in st.session_state else "No",
+        ),
+        (
+            "Train results",
+            "Yes" if "plsda_train_results" in st.session_state else "No",
+        ),
+        (
+            "Test results",
+            "Yes" if "plsda_test_results" in st.session_state else "No",
+        ),
+        (
+            "VIP scores",
+            "Yes" if "plsda_vip" in st.session_state else "No",
+        ),
+    ]
+    st.dataframe(
+        pd.DataFrame(plsda_rows, columns=["Item", "Value"]),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+# =====================================================
 # SAVE PROJECT
 # =====================================================
 
@@ -487,12 +566,12 @@ st.header("Save Project")
 st.info(
     """
 The project file (`.foodai`) contains:
-
-- Original & preprocessed datasets  
-- Data setup (Sample ID, X, y, group)  
-- Preprocessing configuration  
-- Train / Test split (if available)  
-- LDA / QDA model and results (if fitted)  
+- Original & preprocessed datasets
+- Data setup (Sample ID, X, y, group)
+- Preprocessing configuration
+- Train / Test split (if available)
+- LDA / QDA model and results (if fitted)
+- PLS-DA model, grid search, VIP and results (if fitted)
 """
 )
 
@@ -557,7 +636,6 @@ if uploaded_project is not None:
             st.stop()
 
         metadata = loaded_project.get("metadata", {})
-
         st.success("Project file successfully loaded.")
 
         col1, col2 = st.columns(2)
@@ -617,6 +695,14 @@ if uploaded_project is not None:
                 da_sec.get("da_model_type", "fitted"),
             )
 
+        # PLS-DA
+        plsda_sec = loaded_project.get("pls_da", {})
+        if plsda_sec.get("plsda_model") is not None:
+            st.write(
+                "**PLS-DA model:**",
+                f"{plsda_sec.get('plsda_n_lv_fit', '?')} LV",
+            )
+
         # Restore button
         if st.button(
             "Restore Project",
@@ -643,7 +729,6 @@ if "X_variables" in st.session_state:
     st.subheader("Current Predictor Variables")
 
     X_variables = _safe_get("X_variables", [])
-
     if X_variables:
         st.dataframe(
             pd.DataFrame(X_variables, columns=["Variable"]),
