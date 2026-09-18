@@ -124,7 +124,6 @@ def build_scores_df(scores_array, y, index, n_comp):
 
 
 def prepare_xy(dataframe, x_cols, y_col):
-    """Return clean X, y, and the filtered dataframe index."""
     cols = list(x_cols) + [y_col]
     sub = dataframe[cols].dropna()
     X = sub[x_cols].astype(np.float64)
@@ -165,10 +164,6 @@ data_source = st.radio(
     key="lda_data_source",
 )
 
-# -----------------------------------------------------
-# Load data according to source
-# -----------------------------------------------------
-
 use_external_split = False
 
 if data_source == "Train / Test split":
@@ -206,7 +201,6 @@ sample_id = st.session_state.get("sample_id")
 if sample_id is not None and sample_id not in df.columns:
     sample_id = None
 
-# --- X ---
 default_X = st.session_state.get("X_variables", numeric_variables)
 default_X = [x for x in default_X if x in numeric_variables]
 
@@ -221,7 +215,6 @@ if len(selected_X) < 1:
     st.warning("Select at least one predictor variable.")
     st.stop()
 
-# --- y ---
 y_options = [c for c in y_candidates if c not in selected_X]
 if not y_options:
     st.error("No suitable categorical / discrete target variable found.")
@@ -239,7 +232,6 @@ y_variable = st.selectbox(
     key="lda_y",
 )
 
-# Controllo minimo 2 classi
 n_classes = df[y_variable].nunique(dropna=True)
 if n_classes < 2:
     st.error("La variabile target deve avere **almeno 2 classi**.")
@@ -265,17 +257,19 @@ with col2:
     max_comp = max(1, min(len(selected_X), n_classes - 1))
 
     if model_type == "LDA":
-        # --- Fix robusto contro StreamlitInvalidMinMaxError ---
-        default_n = min(2, max_comp)
-        current = st.session_state.get("lda_ncomp", default_n)
-        if not isinstance(current, (int, float)) or current < 1 or current > max_comp:
-            st.session_state["lda_ncomp"] = default_n
+        # === FIX DEFINITIVO contro StreamlitInvalidMinMaxError ===
+        # Se il valore precedente non è più valido → cancellalo
+        if "lda_ncomp" in st.session_state:
+            prev = st.session_state["lda_ncomp"]
+            if not isinstance(prev, (int, float)) or prev < 1 or prev > max_comp:
+                del st.session_state["lda_ncomp"]
 
         n_components = st.slider(
             "Number of discriminant axes",
             min_value=1,
             max_value=max_comp,
-            key="lda_ncomp",          # niente value= quando usi key
+            value=min(2, max_comp),   # default sicuro
+            key="lda_ncomp",
         )
     else:
         n_components = None
@@ -325,11 +319,10 @@ if enable_cv:
         )
 
 # =====================================================
-# TABS: TRAINING | TEST
+# TABS
 # =====================================================
 
 st.divider()
-
 tab_train, tab_test = st.tabs(["Training", "Test"])
 
 # #####################################################
@@ -341,13 +334,9 @@ with tab_train:
     st.subheader("Training set")
 
     if use_external_split:
-        X_train, y_train, train_idx = prepare_xy(
-            train_df, selected_X, y_variable
-        )
+        X_train, y_train, train_idx = prepare_xy(train_df, selected_X, y_variable)
     else:
-        X_train, y_train, train_idx = prepare_xy(
-            df, selected_X, y_variable
-        )
+        X_train, y_train, train_idx = prepare_xy(df, selected_X, y_variable)
 
     st.write(
         f"**Samples:** {X_train.shape[0]}  |  "
@@ -388,9 +377,7 @@ with tab_train:
                 st.warning("Not enough samples per class for CV. CV skipped.")
             else:
                 skf = StratifiedKFold(
-                    n_splits=n_splits,
-                    shuffle=True,
-                    random_state=int(cv_seed),
+                    n_splits=n_splits, shuffle=True, random_state=int(cv_seed)
                 )
                 if model_type == "LDA":
                     cv_model = LDA(n_components=n_components, solver=solver)
@@ -469,22 +456,13 @@ with tab_train:
             c1, c2, c3 = st.columns(3)
             c1.metric("Mean CV accuracy", f"{acc_scores.mean():.3f}")
             c2.metric("Std CV accuracy", f"{acc_scores.std():.3f}")
-            c3.metric(
-                "Min – Max",
-                f"{acc_scores.min():.3f} – {acc_scores.max():.3f}",
-            )
+            c3.metric("Min – Max", f"{acc_scores.min():.3f} – {acc_scores.max():.3f}")
 
             fold_df = pd.DataFrame({
                 "Fold": [f"Fold {i+1}" for i in range(len(acc_scores))],
                 "Accuracy": acc_scores,
             })
-            fig_folds = px.bar(
-                fold_df,
-                x="Fold",
-                y="Accuracy",
-                title="Accuracy per CV fold",
-                text="Accuracy",
-            )
+            fig_folds = px.bar(fold_df, x="Fold", y="Accuracy", title="Accuracy per CV fold", text="Accuracy")
             fig_folds.update_traces(texttemplate="%{text:.3f}")
             fig_folds.update_yaxes(range=[0, 1.05])
             st.plotly_chart(fig_folds, use_container_width=True)
@@ -506,9 +484,7 @@ with tab_train:
             st.subheader("LDA scores & loadings")
 
             n_comp = res["scores"].shape[1]
-            scores_df = build_scores_df(
-                res["scores"], y_true, res["index"], n_comp
-            )
+            scores_df = build_scores_df(res["scores"], y_true, res["index"], n_comp)
 
             if hasattr(model, "explained_variance_ratio_"):
                 ev = model.explained_variance_ratio_ * 100
@@ -520,41 +496,25 @@ with tab_train:
                 st.dataframe(ev_df, hide_index=True, use_container_width=True)
 
             if n_comp >= 2:
-                hover = sample_id if (
-                    sample_id is not None and sample_id in df.columns
-                ) else None
-
+                hover = sample_id if (sample_id is not None and sample_id in df.columns) else None
                 if hover is not None:
                     scores_df[hover] = df.loc[scores_df.index, hover]
 
                 fig_sc = px.scatter(
-                    scores_df,
-                    x="LD1",
-                    y="LD2",
-                    color="Class",
-                    hover_name=hover,
-                    title="LDA scores plot (training)",
+                    scores_df, x="LD1", y="LD2", color="Class",
+                    hover_name=hover, title="LDA scores plot (training)"
                 )
                 fig_sc.update_xaxes(zeroline=True, zerolinecolor="black")
                 fig_sc.update_yaxes(zeroline=True, zerolinecolor="black")
-
                 if hasattr(model, "explained_variance_ratio_"):
-                    fig_sc.update_xaxes(
-                        title=f"LD1 ({model.explained_variance_ratio_[0]*100:.1f}%)"
-                    )
-                    fig_sc.update_yaxes(
-                        title=f"LD2 ({model.explained_variance_ratio_[1]*100:.1f}%)"
-                    )
+                    fig_sc.update_xaxes(title=f"LD1 ({model.explained_variance_ratio_[0]*100:.1f}%)")
+                    fig_sc.update_yaxes(title=f"LD2 ({model.explained_variance_ratio_[1]*100:.1f}%)")
                 st.plotly_chart(fig_sc, use_container_width=True)
 
             elif n_comp == 1:
                 fig_sc = px.histogram(
-                    scores_df,
-                    x="LD1",
-                    color="Class",
-                    barmode="overlay",
-                    opacity=0.7,
-                    title="LDA scores (1 component) — binary case",
+                    scores_df, x="LD1", color="Class", barmode="overlay",
+                    opacity=0.7, title="LDA scores (1 component) — binary case"
                 )
                 st.plotly_chart(fig_sc, use_container_width=True)
 
@@ -567,23 +527,18 @@ with tab_train:
                     model.scalings_[:, :n_ax],
                     index=selected_X,
                     columns=[f"LD{i+1}" for i in range(n_ax)],
-                )
-                load_df = load_df.reset_index().rename(columns={"index": "Variable"})
+                ).reset_index().rename(columns={"index": "Variable"})
             elif hasattr(model, "coef_"):
                 coef = model.coef_
                 if coef.shape[0] == 1:
-                    load_df = pd.DataFrame({
-                        "Variable": selected_X,
-                        "LD1": coef[0],
-                    })
+                    load_df = pd.DataFrame({"Variable": selected_X, "LD1": coef[0]})
                 else:
                     n_ax = min(2, coef.shape[0])
                     load_df = pd.DataFrame(
                         coef[:n_ax].T,
                         index=selected_X,
                         columns=[f"Coef class {i}" for i in range(n_ax)],
-                    )
-                    load_df = load_df.reset_index().rename(columns={"index": "Variable"})
+                    ).reset_index().rename(columns={"index": "Variable"})
 
             if load_df is not None:
                 st.dataframe(load_df.round(4), hide_index=True, use_container_width=True)
@@ -591,11 +546,8 @@ with tab_train:
                 ld_cols = [c for c in load_df.columns if c.startswith("LD")]
                 if len(ld_cols) >= 2:
                     fig_ld = px.scatter(
-                        load_df,
-                        x=ld_cols[0],
-                        y=ld_cols[1],
-                        text="Variable",
-                        title="Loadings plot",
+                        load_df, x=ld_cols[0], y=ld_cols[1], text="Variable",
+                        title="Loadings plot"
                     )
                     fig_ld.update_traces(textposition="top center")
                     fig_ld.update_xaxes(zeroline=True, zerolinecolor="black")
@@ -604,14 +556,10 @@ with tab_train:
 
                 if ld_cols:
                     bar_df = load_df[["Variable", ld_cols[0]]].copy()
-                    bar_df = bar_df.sort_values(
-                        by=ld_cols[0], key=np.abs, ascending=False
-                    )
+                    bar_df = bar_df.sort_values(by=ld_cols[0], key=np.abs, ascending=False)
                     fig_bar = px.bar(
-                        bar_df,
-                        x="Variable",
-                        y=ld_cols[0],
-                        title=f"Variable contributions — {ld_cols[0]}",
+                        bar_df, x="Variable", y=ld_cols[0],
+                        title=f"Variable contributions — {ld_cols[0]}"
                     )
                     fig_bar.update_layout(xaxis_tickangle=90)
                     st.plotly_chart(fig_bar, use_container_width=True)
@@ -652,9 +600,7 @@ with tab_train:
         )
 
     else:
-        st.info(
-            "Click **Fit model on training set** to train the model and see results."
-        )
+        st.info("Click **Fit model on training set** to train the model and see results.")
 
 # #####################################################
 # TEST TAB
@@ -674,31 +620,19 @@ with tab_test:
     y_var_fit = st.session_state["da_y_var"]
 
     if use_external_split:
-        missing_cols = [
-            c for c in X_vars_fit + [y_var_fit] if c not in test_df.columns
-        ]
+        missing_cols = [c for c in X_vars_fit + [y_var_fit] if c not in test_df.columns]
         if missing_cols:
             st.error(f"Test set is missing columns: {missing_cols}")
             st.stop()
-
-        X_test, y_test, test_idx = prepare_xy(
-            test_df, X_vars_fit, y_var_fit
-        )
+        X_test, y_test, test_idx = prepare_xy(test_df, X_vars_fit, y_var_fit)
     else:
         st.info(
             "No external train/test split found. "
-            "You can still evaluate on a hold-out subset of the "
-            "current dataset, or go to the **Data Split** page."
+            "You can still evaluate on a hold-out subset of the current dataset."
         )
 
-        holdout = st.slider(
-            "Hold-out proportion for quick test",
-            0.1, 0.5, 0.2, 0.05,
-            key="lda_holdout",
-        )
-        seed_ho = st.number_input(
-            "Hold-out seed", 0, 99999, 42, key="lda_ho_seed"
-        )
+        holdout = st.slider("Hold-out proportion for quick test", 0.1, 0.5, 0.2, 0.05, key="lda_holdout")
+        seed_ho = st.number_input("Hold-out seed", 0, 99999, 42, key="lda_ho_seed")
 
         X_all, y_all, all_idx = prepare_xy(df, X_vars_fit, y_var_fit)
         train_idx_used = set(st.session_state.get("da_train_idx", []))
@@ -706,21 +640,15 @@ with tab_test:
         if train_idx_used and set(all_idx).issubset(train_idx_used):
             st.warning(
                 "The model was fitted on the entire dataset. "
-                "Creating a random hold-out for illustration only "
-                "— results are optimistic / not independent."
+                "Creating a random hold-out for illustration only — results are optimistic."
             )
             try:
                 _, te_idx = train_test_split(
-                    all_idx,
-                    test_size=holdout,
-                    random_state=int(seed_ho),
-                    stratify=y_all,
+                    all_idx, test_size=holdout, random_state=int(seed_ho), stratify=y_all
                 )
             except ValueError:
                 _, te_idx = train_test_split(
-                    all_idx,
-                    test_size=holdout,
-                    random_state=int(seed_ho),
+                    all_idx, test_size=holdout, random_state=int(seed_ho)
                 )
             X_test = X_all.loc[te_idx]
             y_test = y_all.loc[te_idx]
@@ -728,19 +656,13 @@ with tab_test:
         else:
             leftover = [i for i in all_idx if i not in train_idx_used]
             if len(leftover) < 2:
-                st.error(
-                    "Not enough leftover samples for a test set. "
-                    "Use the Data Split page."
-                )
+                st.error("Not enough leftover samples for a test set. Use the Data Split page.")
                 st.stop()
             X_test = X_all.loc[leftover]
             y_test = y_all.loc[leftover]
             test_idx = leftover
 
-    st.write(
-        f"**Test samples:** {X_test.shape[0]}  |  "
-        f"**Variables:** {X_test.shape[1]}"
-    )
+    st.write(f"**Test samples:** {X_test.shape[0]}  |  **Variables:** {X_test.shape[1]}")
 
     if st.button("📊 Evaluate on test set", type="primary", key="lda_eval_test"):
 
@@ -800,31 +722,21 @@ with tab_test:
         scores_te_df = None
         if model_type_fit == "LDA" and tres["scores"] is not None:
             n_comp_te = tres["scores"].shape[1]
-            scores_te_df = build_scores_df(
-                tres["scores"], y_true_te, tres["index"], n_comp_te
-            )
+            scores_te_df = build_scores_df(tres["scores"], y_true_te, tres["index"], n_comp_te)
             scores_te_df["Predicted"] = y_pred_te
 
             if n_comp_te >= 2:
                 fig_te = px.scatter(
-                    scores_te_df,
-                    x="LD1",
-                    y="LD2",
-                    color="Class",
-                    symbol="Predicted",
-                    title="LDA scores — Test set",
+                    scores_te_df, x="LD1", y="LD2", color="Class", symbol="Predicted",
+                    title="LDA scores — Test set"
                 )
                 fig_te.update_xaxes(zeroline=True, zerolinecolor="black")
                 fig_te.update_yaxes(zeroline=True, zerolinecolor="black")
                 st.plotly_chart(fig_te, use_container_width=True)
             elif n_comp_te == 1:
                 fig_te = px.histogram(
-                    scores_te_df,
-                    x="LD1",
-                    color="Class",
-                    barmode="overlay",
-                    opacity=0.7,
-                    title="LDA scores (1 component) — Test set",
+                    scores_te_df, x="LD1", color="Class", barmode="overlay",
+                    opacity=0.7, title="LDA scores (1 component) — Test set"
                 )
                 st.plotly_chart(fig_te, use_container_width=True)
 
@@ -868,6 +780,4 @@ with tab_test:
         )
 
     else:
-        st.info(
-            "Click **Evaluate on test set** to get predictions and metrics on the test data."
-        )
+        st.info("Click **Evaluate on test set** to get predictions and metrics on the test data.")
