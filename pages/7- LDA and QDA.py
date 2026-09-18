@@ -257,19 +257,13 @@ with col2:
     max_comp = max(1, min(len(selected_X), n_classes - 1))
 
     if model_type == "LDA":
-        # === FIX DEFINITIVO contro StreamlitInvalidMinMaxError ===
-        # Se il valore precedente non è più valido → cancellalo
-        if "lda_ncomp" in st.session_state:
-            prev = st.session_state["lda_ncomp"]
-            if not isinstance(prev, (int, float)) or prev < 1 or prev > max_comp:
-                del st.session_state["lda_ncomp"]
-
+        # Chiave dinamica → risolve definitivamente l'errore con 2 classi
         n_components = st.slider(
             "Number of discriminant axes",
             min_value=1,
             max_value=max_comp,
-            value=min(2, max_comp),   # default sicuro
-            key="lda_ncomp",
+            value=min(2, max_comp),
+            key=f"lda_ncomp_{max_comp}",
         )
     else:
         n_components = None
@@ -462,7 +456,10 @@ with tab_train:
                 "Fold": [f"Fold {i+1}" for i in range(len(acc_scores))],
                 "Accuracy": acc_scores,
             })
-            fig_folds = px.bar(fold_df, x="Fold", y="Accuracy", title="Accuracy per CV fold", text="Accuracy")
+            fig_folds = px.bar(
+                fold_df, x="Fold", y="Accuracy",
+                title="Accuracy per CV fold", text="Accuracy"
+            )
             fig_folds.update_traces(texttemplate="%{text:.3f}")
             fig_folds.update_yaxes(range=[0, 1.05])
             st.plotly_chart(fig_folds, use_container_width=True)
@@ -507,8 +504,12 @@ with tab_train:
                 fig_sc.update_xaxes(zeroline=True, zerolinecolor="black")
                 fig_sc.update_yaxes(zeroline=True, zerolinecolor="black")
                 if hasattr(model, "explained_variance_ratio_"):
-                    fig_sc.update_xaxes(title=f"LD1 ({model.explained_variance_ratio_[0]*100:.1f}%)")
-                    fig_sc.update_yaxes(title=f"LD2 ({model.explained_variance_ratio_[1]*100:.1f}%)")
+                    fig_sc.update_xaxes(
+                        title=f"LD1 ({model.explained_variance_ratio_[0]*100:.1f}%)"
+                    )
+                    fig_sc.update_yaxes(
+                        title=f"LD2 ({model.explained_variance_ratio_[1]*100:.1f}%)"
+                    )
                 st.plotly_chart(fig_sc, use_container_width=True)
 
             elif n_comp == 1:
@@ -631,8 +632,14 @@ with tab_test:
             "You can still evaluate on a hold-out subset of the current dataset."
         )
 
-        holdout = st.slider("Hold-out proportion for quick test", 0.1, 0.5, 0.2, 0.05, key="lda_holdout")
-        seed_ho = st.number_input("Hold-out seed", 0, 99999, 42, key="lda_ho_seed")
+        holdout = st.slider(
+            "Hold-out proportion for quick test",
+            0.1, 0.5, 0.2, 0.05,
+            key="lda_holdout",
+        )
+        seed_ho = st.number_input(
+            "Hold-out seed", 0, 99999, 42, key="lda_ho_seed"
+        )
 
         X_all, y_all, all_idx = prepare_xy(df, X_vars_fit, y_var_fit)
         train_idx_used = set(st.session_state.get("da_train_idx", []))
@@ -644,7 +651,8 @@ with tab_test:
             )
             try:
                 _, te_idx = train_test_split(
-                    all_idx, test_size=holdout, random_state=int(seed_ho), stratify=y_all
+                    all_idx, test_size=holdout,
+                    random_state=int(seed_ho), stratify=y_all
                 )
             except ValueError:
                 _, te_idx = train_test_split(
@@ -722,12 +730,15 @@ with tab_test:
         scores_te_df = None
         if model_type_fit == "LDA" and tres["scores"] is not None:
             n_comp_te = tres["scores"].shape[1]
-            scores_te_df = build_scores_df(tres["scores"], y_true_te, tres["index"], n_comp_te)
+            scores_te_df = build_scores_df(
+                tres["scores"], y_true_te, tres["index"], n_comp_te
+            )
             scores_te_df["Predicted"] = y_pred_te
 
             if n_comp_te >= 2:
                 fig_te = px.scatter(
-                    scores_te_df, x="LD1", y="LD2", color="Class", symbol="Predicted",
+                    scores_te_df, x="LD1", y="LD2",
+                    color="Class", symbol="Predicted",
                     title="LDA scores — Test set"
                 )
                 fig_te.update_xaxes(zeroline=True, zerolinecolor="black")
@@ -735,8 +746,9 @@ with tab_test:
                 st.plotly_chart(fig_te, use_container_width=True)
             elif n_comp_te == 1:
                 fig_te = px.histogram(
-                    scores_te_df, x="LD1", color="Class", barmode="overlay",
-                    opacity=0.7, title="LDA scores (1 component) — Test set"
+                    scores_te_df, x="LD1", color="Class",
+                    barmode="overlay", opacity=0.7,
+                    title="LDA scores (1 component) — Test set"
                 )
                 st.plotly_chart(fig_te, use_container_width=True)
 
