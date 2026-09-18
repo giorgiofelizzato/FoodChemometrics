@@ -270,6 +270,10 @@ y_variable = st.selectbox(
 
 st.divider()
 st.header("Model settings")
+st.info(
+    "**Note:** Use **LDA** only when the number of classes is greater than 2. "
+    "For binary classification (exactly 2 classes), Fisher’s Linear Discriminant (FLD) is recommended."
+)
 
 col1, col2, col3 = st.columns(3)
 
