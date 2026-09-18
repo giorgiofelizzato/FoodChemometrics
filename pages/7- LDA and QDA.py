@@ -93,7 +93,6 @@ def metrics_table(y_true, y_pred, labels=None):
             "Support": int((np.asarray(y_true) == lab).sum()),
         })
 
-    # macro / weighted
     rows.append({
         "Class": "macro avg",
         "Precision": precision_score(y_true, y_pred, average="macro", zero_division=0),
@@ -176,7 +175,7 @@ if data_source == "Train / Test split":
     train_df = st.session_state["train_dataset"].copy()
     test_df = st.session_state["test_dataset"].copy()
     use_external_split = True
-    df = train_df  # used for variable detection
+    df = train_df
     st.success(
         f"Split loaded — Train: {train_df.shape[0]} samples | "
         f"Test: {test_df.shape[0]} samples"
@@ -197,7 +196,6 @@ st.header("Variables")
 
 numeric_variables = df.select_dtypes(include=np.number).columns.tolist()
 
-# discrete numeric + categorical for y
 categorical_variables = df.select_dtypes(exclude=np.number).columns.tolist()
 discrete_numeric = [
     c for c in numeric_variables if df[c].nunique(dropna=True) <= 20
@@ -241,7 +239,7 @@ y_variable = st.selectbox(
     key="lda_y",
 )
 
-# Controllo minimo 2 classi (fondamentale per LDA/QDA)
+# Controllo minimo 2 classi
 n_classes = df[y_variable].nunique(dropna=True)
 if n_classes < 2:
     st.error("La variabile target deve avere **almeno 2 classi**.")
@@ -267,18 +265,17 @@ with col2:
     max_comp = max(1, min(len(selected_X), n_classes - 1))
 
     if model_type == "LDA":
-        # Clamp session state per evitare errore Streamlit quando si passa a 2 classi
-        if "lda_ncomp" in st.session_state:
-            st.session_state["lda_ncomp"] = min(
-                max(1, st.session_state["lda_ncomp"]), max_comp
-            )
+        # --- Fix robusto contro StreamlitInvalidMinMaxError ---
+        default_n = min(2, max_comp)
+        current = st.session_state.get("lda_ncomp", default_n)
+        if not isinstance(current, (int, float)) or current < 1 or current > max_comp:
+            st.session_state["lda_ncomp"] = default_n
 
         n_components = st.slider(
             "Number of discriminant axes",
             min_value=1,
             max_value=max_comp,
-            value=min(2, max_comp),
-            key="lda_ncomp",
+            key="lda_ncomp",          # niente value= quando usi key
         )
     else:
         n_components = None
@@ -343,7 +340,6 @@ with tab_train:
 
     st.subheader("Training set")
 
-    # ---- build training data ----
     if use_external_split:
         X_train, y_train, train_idx = prepare_xy(
             train_df, selected_X, y_variable
@@ -362,10 +358,8 @@ with tab_train:
     class_dist = y_train.value_counts().rename("Count")
     st.dataframe(class_dist.to_frame(), use_container_width=True)
 
-    # ---- Fit button ----
     if st.button("🚀 Fit model on training set", type="primary", key="lda_fit"):
 
-        # Check class sizes
         counts = y_train.value_counts()
         if counts.min() < 2:
             st.error(
@@ -374,24 +368,18 @@ with tab_train:
             )
             st.stop()
 
-        # Instantiate model
         if model_type == "LDA":
             model = LDA(n_components=n_components, solver=solver)
         else:
             model = QDA()
 
-        # Fit
         model.fit(X_train, y_train)
-
-        # Predictions on training
         y_pred_train = model.predict(X_train)
 
-        # Scores (LDA only)
         scores_train = None
         if model_type == "LDA":
             scores_train = model.transform(X_train)
 
-        # Cross-validation
         cv_results = None
         if enable_cv:
             min_class = counts.min()
@@ -404,15 +392,12 @@ with tab_train:
                     shuffle=True,
                     random_state=int(cv_seed),
                 )
-                # Ricrea il modello pulito per CV
                 if model_type == "LDA":
                     cv_model = LDA(n_components=n_components, solver=solver)
                 else:
                     cv_model = QDA()
 
-                y_pred_cv = cross_val_predict(
-                    cv_model, X_train, y_train, cv=skf
-                )
+                y_pred_cv = cross_val_predict(cv_model, X_train, y_train, cv=skf)
                 cv_acc_scores = cross_val_score(
                     cv_model, X_train, y_train, cv=skf, scoring="accuracy"
                 )
@@ -422,7 +407,6 @@ with tab_train:
                     "n_splits": n_splits,
                 }
 
-        # Store in session state
         st.session_state["da_model"] = model
         st.session_state["da_model_type"] = model_type
         st.session_state["da_X_vars"] = selected_X
@@ -440,14 +424,12 @@ with tab_train:
             "X": X_train,
         }
 
-        # Clear previous test results
         if "da_test_results" in st.session_state:
             del st.session_state["da_test_results"]
 
         st.success("✅ Model fitted successfully!")
         st.rerun()
 
-    # ---- Display training results if available ----
     if (
         "da_train_results" in st.session_state
         and st.session_state.get("da_X_vars") == selected_X
@@ -461,9 +443,6 @@ with tab_train:
         y_pred = res["y_pred"]
         labels = sorted(set(y_true) | set(y_pred))
 
-        # =============================================
-        # Metrics – Training (resubstitution)
-        # =============================================
         st.divider()
         st.subheader("📊 Training performance (resubstitution)")
 
@@ -480,9 +459,6 @@ with tab_train:
             use_container_width=True,
         )
 
-        # =============================================
-        # Cross-validation
-        # =============================================
         if res.get("cv") is not None:
             st.divider()
             st.subheader(f"🔄 Stratified {res['cv']['n_splits']}-fold CV")
@@ -498,7 +474,6 @@ with tab_train:
                 f"{acc_scores.min():.3f} – {acc_scores.max():.3f}",
             )
 
-            # Per-fold accuracy bar
             fold_df = pd.DataFrame({
                 "Fold": [f"Fold {i+1}" for i in range(len(acc_scores))],
                 "Accuracy": acc_scores,
@@ -514,7 +489,6 @@ with tab_train:
             fig_folds.update_yaxes(range=[0, 1.05])
             st.plotly_chart(fig_folds, use_container_width=True)
 
-            # CV metrics table + confusion
             met_cv, acc_cv = metrics_table(y_true, y_pred_cv, labels)
             st.write(f"**CV overall accuracy:** {acc_cv:.3f}")
             st.dataframe(met_cv, hide_index=True, use_container_width=True)
@@ -525,9 +499,6 @@ with tab_train:
                 use_container_width=True,
             )
 
-        # =============================================
-        # LDA-specific plots
-        # =============================================
         scores_df = None
         if model_type == "LDA" and res["scores"] is not None:
 
@@ -539,7 +510,6 @@ with tab_train:
                 res["scores"], y_true, res["index"], n_comp
             )
 
-            # Explained variance
             if hasattr(model, "explained_variance_ratio_"):
                 ev = model.explained_variance_ratio_ * 100
                 ev_df = pd.DataFrame({
@@ -549,7 +519,6 @@ with tab_train:
                 })
                 st.dataframe(ev_df, hide_index=True, use_container_width=True)
 
-            # Scores plot
             if n_comp >= 2:
                 hover = sample_id if (
                     sample_id is not None and sample_id in df.columns
@@ -589,7 +558,6 @@ with tab_train:
                 )
                 st.plotly_chart(fig_sc, use_container_width=True)
 
-            # Loadings (prefer scalings_)
             st.subheader("Loadings (coefficients)")
 
             load_df = None
@@ -603,7 +571,7 @@ with tab_train:
                 load_df = load_df.reset_index().rename(columns={"index": "Variable"})
             elif hasattr(model, "coef_"):
                 coef = model.coef_
-                if coef.shape[0] == 1:  # binary
+                if coef.shape[0] == 1:
                     load_df = pd.DataFrame({
                         "Variable": selected_X,
                         "LD1": coef[0],
@@ -634,7 +602,6 @@ with tab_train:
                     fig_ld.update_yaxes(zeroline=True, zerolinecolor="black")
                     st.plotly_chart(fig_ld, use_container_width=True)
 
-                # Bar plot of |loadings| for first axis
                 if ld_cols:
                     bar_df = load_df[["Variable", ld_cols[0]]].copy()
                     bar_df = bar_df.sort_values(
@@ -649,29 +616,20 @@ with tab_train:
                     fig_bar.update_layout(xaxis_tickangle=90)
                     st.plotly_chart(fig_bar, use_container_width=True)
 
-        # =============================================
-        # Download training results
-        # =============================================
         st.divider()
         st.subheader("⬇️ Download training results")
 
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            # Predictions
             pred_df = pd.DataFrame({
                 "Sample": res["index"].astype(str),
                 "True": y_true.values,
                 "Predicted": y_pred,
             })
             pred_df.to_excel(writer, sheet_name="Train_Predictions", index=False)
-
-            # Metrics
             met_df.to_excel(writer, sheet_name="Train_Metrics", index=False)
-
-            # Confusion
             cm_df.to_excel(writer, sheet_name="Train_CM")
 
-            # CV
             if res.get("cv") is not None:
                 cv_pred_df = pd.DataFrame({
                     "Sample": res["index"].astype(str),
@@ -682,7 +640,6 @@ with tab_train:
                 met_cv, _ = metrics_table(y_true, res["cv"]["y_pred_cv"], labels)
                 met_cv.to_excel(writer, sheet_name="CV_Metrics", index=False)
 
-            # Scores
             if scores_df is not None:
                 scores_df.to_excel(writer, sheet_name="LDA_Scores")
 
@@ -716,7 +673,6 @@ with tab_test:
     X_vars_fit = st.session_state["da_X_vars"]
     y_var_fit = st.session_state["da_y_var"]
 
-    # ---- build test data ----
     if use_external_split:
         missing_cols = [
             c for c in X_vars_fit + [y_var_fit] if c not in test_df.columns
@@ -745,11 +701,9 @@ with tab_test:
         )
 
         X_all, y_all, all_idx = prepare_xy(df, X_vars_fit, y_var_fit)
-
         train_idx_used = set(st.session_state.get("da_train_idx", []))
 
         if train_idx_used and set(all_idx).issubset(train_idx_used):
-            # Model was fit on the whole dataset
             st.warning(
                 "The model was fitted on the entire dataset. "
                 "Creating a random hold-out for illustration only "
@@ -772,7 +726,6 @@ with tab_test:
             y_test = y_all.loc[te_idx]
             test_idx = te_idx
         else:
-            # Use samples not in training
             leftover = [i for i in all_idx if i not in train_idx_used]
             if len(leftover) < 2:
                 st.error(
@@ -800,7 +753,6 @@ with tab_test:
             except Exception:
                 scores_test = None
 
-        # Probabilities if available
         proba_test = None
         if hasattr(model, "predict_proba"):
             try:
@@ -819,7 +771,6 @@ with tab_test:
         st.success("✅ Test evaluation completed!")
         st.rerun()
 
-    # ---- Display test results ----
     if "da_test_results" in st.session_state:
 
         tres = st.session_state["da_test_results"]
@@ -843,11 +794,9 @@ with tab_test:
             use_container_width=True,
         )
 
-        # Classification report text
         with st.expander("Classification report (text)"):
             st.text(classification_report(y_true_te, y_pred_te, digits=3))
 
-        # Scores plot on test (LDA)
         scores_te_df = None
         if model_type_fit == "LDA" and tres["scores"] is not None:
             n_comp_te = tres["scores"].shape[1]
@@ -879,7 +828,6 @@ with tab_test:
                 )
                 st.plotly_chart(fig_te, use_container_width=True)
 
-        # Prediction probabilities
         if tres["proba"] is not None:
             st.subheader("Prediction probabilities")
             proba_df = pd.DataFrame(
@@ -891,7 +839,6 @@ with tab_test:
             proba_df.insert(1, "Predicted", y_pred_te)
             st.dataframe(proba_df.round(4), use_container_width=True)
 
-        # Download test results
         st.divider()
         st.subheader("⬇️ Download test results")
 
