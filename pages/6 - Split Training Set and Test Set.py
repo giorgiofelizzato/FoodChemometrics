@@ -7,6 +7,7 @@ from scipy.signal import savgol_filter
 import io
 
 
+
 # =====================================================
 # CONFIGURATION
 # =====================================================
@@ -16,6 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 st.title("Train / Test Split")
+
 
 
 # =====================================================
@@ -42,6 +44,7 @@ def apply_preprocessing(
     X_work = X.copy()
     params = {} if fit_params is None else fit_params.copy()
 
+
     # -------------------------------------------------
     # 1. Missing values
     # -------------------------------------------------
@@ -63,6 +66,7 @@ def apply_preprocessing(
         X_work = X_work.fillna(fill_values)
     # "None" / "Keep as is" → do nothing
 
+
     # -------------------------------------------------
     # 2. Transformation
     # -------------------------------------------------
@@ -71,6 +75,7 @@ def apply_preprocessing(
     )
     if fit_params is None:
         params["transformation_shift"] = shift
+
 
     if transformation == "Log10":
         if fit_params is None:
@@ -93,6 +98,7 @@ def apply_preprocessing(
                 shift = abs(min_val)
                 params["transformation_shift"] = shift
         X_work = np.sqrt(X_work + shift)
+
 
     # -------------------------------------------------
     # 3. Scaling
@@ -147,6 +153,7 @@ def apply_preprocessing(
                 index=X_work.index,
             )
 
+
     # -------------------------------------------------
     # 4. SNV
     # -------------------------------------------------
@@ -157,11 +164,13 @@ def apply_preprocessing(
             row_std[row_std == 0] = 1
             return (data - row_mean) / row_std
 
+
         X_work = pd.DataFrame(
             snv(X_work.values),
             columns=X_work.columns,
             index=X_work.index,
         )
+
 
     # -------------------------------------------------
     # 5. Savitzky-Golay
@@ -178,10 +187,12 @@ def apply_preprocessing(
             index=X_work.index,
         )
 
+
     X_work = X_work.astype(np.float64)
     if fit_params is None:
         return X_work, params
     return X_work
+
 
 
 def build_full_dataset(original_df, processed_X, selected_columns, keep_index):
@@ -200,6 +211,7 @@ def build_full_dataset(original_df, processed_X, selected_columns, keep_index):
     return result
 
 
+
 def safe_read_excel(file, sheet_name=0):
     """Robust Excel reader that reduces unwanted None/NaN conversions."""
     try:
@@ -216,6 +228,7 @@ def safe_read_excel(file, sheet_name=0):
     return df
 
 
+
 def safe_read_csv(file):
     """Robust CSV reader."""
     try:
@@ -229,6 +242,7 @@ def safe_read_csv(file):
     return df
 
 
+
 # =====================================================
 # PREPROCESSING UI (reusable)
 # =====================================================
@@ -239,20 +253,25 @@ def preprocessing_ui(prefix: str, default_info: dict | None = None, selected_X: 
     """
     st.subheader("Preprocessing options")
 
+
     apply_prep = st.checkbox(
         "Apply preprocessing (fit on train → transform test)",
         value=True if default_info is not None else False,
         key=f"{prefix}_apply_prep",
     )
 
+
     if not apply_prep:
         st.info("No preprocessing will be applied. Raw data will be used.")
         return None
 
+
     # Pre-fill from previous page if available
     di = default_info or {}
 
+
     col_a, col_b = st.columns(2)
+
 
     with col_a:
         missing_opts = ["None", "Drop rows", "Mean", "Median"]
@@ -266,6 +285,7 @@ def preprocessing_ui(prefix: str, default_info: dict | None = None, selected_X: 
             key=f"{prefix}_missing",
         )
 
+
         transf_opts = ["None", "Log10", "Natural log", "Square root"]
         default_transf = di.get("transformation", "None")
         if default_transf not in transf_opts:
@@ -277,12 +297,14 @@ def preprocessing_ui(prefix: str, default_info: dict | None = None, selected_X: 
             key=f"{prefix}_transf",
         )
 
+
         transformation_shift = st.number_input(
             "Transformation shift (auto-adjusted if needed)",
             value=float(di.get("transformation_shift", 0.0)),
             step=0.1,
             key=f"{prefix}_shift",
         )
+
 
     with col_b:
         scaling_opts = ["None", "Mean Centering", "Autoscaling", "Pareto", "MinMax"]
@@ -296,17 +318,20 @@ def preprocessing_ui(prefix: str, default_info: dict | None = None, selected_X: 
             key=f"{prefix}_scaling",
         )
 
+
         apply_snv = st.checkbox(
             "SNV (Standard Normal Variate)",
             value=bool(di.get("snv", False)),
             key=f"{prefix}_snv",
         )
 
+
         apply_savgol = st.checkbox(
             "Savitzky-Golay filter",
             value=bool(di.get("savgol", False)),
             key=f"{prefix}_savgol",
         )
+
 
     savgol_window = None
     savgol_polyorder = None
@@ -333,6 +358,7 @@ def preprocessing_ui(prefix: str, default_info: dict | None = None, selected_X: 
             st.warning("Window length should be odd. It will be adjusted automatically.")
             savgol_window += 1
 
+
     info = {
         "variables": selected_X or di.get("variables", []),
         "missing": missing_method,
@@ -345,6 +371,7 @@ def preprocessing_ui(prefix: str, default_info: dict | None = None, selected_X: 
         "savgol_polyorder": savgol_polyorder,
     }
     return info
+
 
 
 # =====================================================
@@ -361,6 +388,7 @@ mode = st.radio(
 )
 
 
+
 # =====================================================
 # MODE 1 – SPLIT FROM CURRENT DATASET
 # =====================================================
@@ -369,9 +397,19 @@ if mode == "Split from current dataset":
         st.warning("Please load a dataset first (Data Import).")
         st.stop()
 
+
     source_options = ["Raw dataset"]
     if "preprocessed_dataset" in st.session_state:
         source_options.append("Preprocessed dataset")
+
+
+    # Recommendation message (above the source selection)
+    st.info(
+        "**Recommended:** use the **Raw dataset** and apply preprocessing "
+        "during the split (fit on train → transform test). "
+        "This avoids data leakage and keeps the preprocessing parameters "
+        "consistent between train and test."
+    )
 
     source_choice = st.radio(
         "Source dataset",
@@ -379,8 +417,13 @@ if mode == "Split from current dataset":
         key="split_source_choice",
     )
 
+
     if source_choice == "Preprocessed dataset":
         df = st.session_state["preprocessed_dataset"].copy()
+        st.warning(
+            "You selected the already-preprocessed dataset. "
+            "Prefer **Raw dataset** + preprocessing below to avoid data leakage."
+        )
         st.info(
             "Using the already-preprocessed dataset. "
             "You can still choose additional preprocessing below if desired."
@@ -388,9 +431,11 @@ if mode == "Split from current dataset":
     else:
         df = st.session_state["dataset"].copy()
 
+
     st.success(
         f"Dataset loaded: {df.shape[0]} samples × {df.shape[1]} variables"
     )
+
 
     # -------------------------------------------------
     # Variable detection
@@ -398,17 +443,21 @@ if mode == "Split from current dataset":
     numeric_variables = df.select_dtypes(include=np.number).columns.tolist()
     categorical_variables = df.select_dtypes(exclude=np.number).columns.tolist()
 
+
     discrete_numeric = []
     for col in numeric_variables:
         if df[col].nunique(dropna=True) <= 20:
             discrete_numeric.append(col)
 
+
     strat_candidates = sorted(list(set(categorical_variables + discrete_numeric)))
+
 
     # Sample ID
     sample_id = st.session_state.get("sample_id")
     if sample_id is not None and sample_id not in df.columns:
         sample_id = None
+
 
     # -------------------------------------------------
     # X variables
@@ -417,6 +466,7 @@ if mode == "Split from current dataset":
     st.header("Predictor variables (X)")
     default_X = st.session_state.get("X_variables", numeric_variables)
     default_X = [x for x in default_X if x in numeric_variables]
+
 
     selected_X = st.multiselect(
         "Select predictor variables",
@@ -427,6 +477,7 @@ if mode == "Split from current dataset":
     if len(selected_X) < 1:
         st.warning("Select at least one predictor variable.")
         st.stop()
+
 
     # -------------------------------------------------
     # Target / stratification variable
@@ -441,6 +492,7 @@ if mode == "Split from current dataset":
         """
     )
 
+
     y_options = ["None"] + [c for c in strat_candidates if c not in selected_X]
     continuous_numeric = [
         c for c in numeric_variables
@@ -448,10 +500,12 @@ if mode == "Split from current dataset":
     ]
     y_options += continuous_numeric
 
+
     default_y_idx = 0
     saved_y = st.session_state.get("y_variable")
     if saved_y is not None and saved_y in y_options:
         default_y_idx = y_options.index(saved_y)
+
 
     y_variable = st.selectbox(
         "Target variable (y)",
@@ -462,13 +516,16 @@ if mode == "Split from current dataset":
     if y_variable == "None":
         y_variable = None
 
+
     can_stratify = y_variable is not None and y_variable in strat_candidates
+
 
     # -------------------------------------------------
     # SPLIT METHOD
     # -------------------------------------------------
     st.divider()
     st.header("Split method")
+
 
     split_method = st.radio(
         "How do you want to create the test set?",
@@ -481,11 +538,13 @@ if mode == "Split from current dataset":
         key="split_method",
     )
 
+
     test_idx = None
     train_idx = None
     use_stratify = False
     test_size = 0.2
     random_state = 42
+
 
     if split_method == "Random / Stratified":
         col1, col2, col3 = st.columns(3)
@@ -521,6 +580,7 @@ if mode == "Split from current dataset":
             elif y_variable is None:
                 st.caption("No target selected → random (non-stratified) split.")
 
+
     elif split_method == "Manual selection (by sample ID or index)":
         st.info(
             "Select the samples that should go into the **test set**. "
@@ -552,6 +612,7 @@ if mode == "Split from current dataset":
                 test_idx = selected_test_indices
                 train_idx = [i for i in all_indices if i not in test_idx]
 
+
     elif split_method == "By index range":
         st.info("Define one or more inclusive index ranges for the test set.")
         n_ranges = st.number_input("Number of ranges", min_value=1, max_value=10, value=1, key="n_idx_ranges")
@@ -564,6 +625,7 @@ if mode == "Split from current dataset":
                 end = st.number_input(f"Range {i+1} – end index", value=min(10, len(df)-1), key=f"idx_end_{i}")
             ranges.append((int(start), int(end)))
 
+
         test_mask = pd.Series(False, index=df.index)
         for start, end in ranges:
             test_mask.loc[(df.index >= start) & (df.index <= end)] = True
@@ -571,10 +633,12 @@ if mode == "Split from current dataset":
         train_idx = df.index[~test_mask].tolist()
         st.write(f"Test samples selected: **{len(test_idx)}**")
 
+
     elif split_method == "By Sample ID range":
         if sample_id is None or sample_id not in df.columns:
             st.error("Sample ID is not defined or not present in the dataset.")
             st.stop()
+
 
         st.info(
             f"Define inclusive ranges on the column `{sample_id}`. "
@@ -588,6 +652,7 @@ if mode == "Split from current dataset":
         except Exception:
             is_numeric_id = False
 
+
         n_ranges = st.number_input("Number of ID ranges", min_value=1, max_value=10, value=1, key="n_id_ranges")
         ranges = []
         for i in range(int(n_ranges)):
@@ -597,6 +662,7 @@ if mode == "Split from current dataset":
             with c2:
                 end = st.text_input(f"Range {i+1} – end ID", value="", key=f"id_end_{i}")
             ranges.append((start.strip(), end.strip()))
+
 
         test_mask = pd.Series(False, index=df.index)
         for start, end in ranges:
@@ -615,9 +681,11 @@ if mode == "Split from current dataset":
                 e = end if end else "zzzzzzzzzz"
                 test_mask |= (id_series.astype(str) >= s) & (id_series.astype(str) <= e)
 
+
         test_idx = df.index[test_mask].tolist()
         train_idx = df.index[~test_mask].tolist()
         st.write(f"Test samples selected: **{len(test_idx)}**")
+
 
     # -------------------------------------------------
     # Preprocessing (user choice)
@@ -629,6 +697,7 @@ if mode == "Split from current dataset":
         selected_X=selected_X,
     )
 
+
     # -------------------------------------------------
     # Perform split
     # -------------------------------------------------
@@ -636,9 +705,11 @@ if mode == "Split from current dataset":
     if st.button("Perform train/test split", type="primary", key="do_split"):
         work_df = df.copy()
 
+
         # Drop rows with missing target
         if y_variable is not None:
             work_df = work_df.dropna(subset=[y_variable])
+
 
         if split_method == "Random / Stratified":
             stratify_labels = None
@@ -653,6 +724,7 @@ if mode == "Split from current dataset":
                         "Each class needs at least 2 samples."
                     )
                     st.stop()
+
 
             indices = work_df.index.tolist()
             try:
@@ -677,14 +749,17 @@ if mode == "Split from current dataset":
             train_idx = [i for i in train_idx if i in work_df.index]
             test_idx = [i for i in test_idx if i in work_df.index]
 
+
         train_raw = work_df.loc[train_idx].copy()
         test_raw = work_df.loc[test_idx].copy()
+
 
         # Apply preprocessing if requested
         if preprocessing_info is not None:
             prep_vars = [v for v in selected_X if v in train_raw.columns]
             X_train_raw = train_raw[prep_vars]
             X_test_raw = test_raw[prep_vars]
+
 
             X_train_proc, fit_params = apply_preprocessing(
                 X_train_raw,
@@ -700,6 +775,7 @@ if mode == "Split from current dataset":
             )
             train_proc_index = X_train_proc.index
 
+
             X_test_proc = apply_preprocessing(
                 X_test_raw,
                 missing_method=preprocessing_info.get("missing", "None"),
@@ -713,8 +789,10 @@ if mode == "Split from current dataset":
                 fit_params=fit_params,
             )
 
+
             train_df = build_full_dataset(train_raw, X_train_proc, prep_vars, train_proc_index)
             test_df = build_full_dataset(test_raw, X_test_proc, prep_vars, X_test_proc.index)
+
 
             st.session_state["split_preprocessing_params"] = fit_params
             st.session_state["split_preprocessing_info"] = preprocessing_info
@@ -723,6 +801,7 @@ if mode == "Split from current dataset":
             test_df = test_raw
             st.session_state.pop("split_preprocessing_params", None)
             st.session_state.pop("split_preprocessing_info", None)
+
 
         # Save to session
         st.session_state["train_dataset"] = train_df
@@ -733,6 +812,7 @@ if mode == "Split from current dataset":
         st.session_state["X_variables"] = selected_X
         if y_variable is not None:
             st.session_state["y_variable"] = y_variable
+
 
         st.session_state["split_info"] = {
             "mode": "internal_split",
@@ -748,10 +828,12 @@ if mode == "Split from current dataset":
             "preprocessing_applied": preprocessing_info is not None,
         }
 
+
         st.success(
             f"✅ Split completed! Train: {len(train_df)} samples | Test: {len(test_df)} samples"
         )
         st.rerun()
+
 
 
 # =====================================================
@@ -764,7 +846,9 @@ else:
         "for each file. Preprocessing (if chosen) is fit on train and applied to test."
     )
 
+
     col_train, col_test = st.columns(2)
+
 
     with col_train:
         st.subheader("📘 Training set file")
@@ -784,6 +868,7 @@ else:
             st.write(f"Loaded: {train_df_raw.shape[0]} × {train_df_raw.shape[1]}")
             st.dataframe(train_df_raw.head(3), use_container_width=True)
 
+
     with col_test:
         st.subheader("📙 Test set file")
         test_file = st.file_uploader(
@@ -802,9 +887,11 @@ else:
             st.write(f"Loaded: {test_df_raw.shape[0]} × {test_df_raw.shape[1]}")
             st.dataframe(test_df_raw.head(3), use_container_width=True)
 
+
     if train_df_raw is None or test_df_raw is None:
         st.warning("Please upload both training and test files.")
         st.stop()
+
 
     # -------------------------------------------------
     # Common columns & variable selection
@@ -812,14 +899,17 @@ else:
     st.divider()
     st.header("Variable selection")
 
+
     common_cols = sorted(list(set(train_df_raw.columns) & set(test_df_raw.columns)))
     if len(common_cols) == 0:
         st.error("No columns in common between the two files.")
         st.stop()
 
+
     train_numeric = train_df_raw.select_dtypes(include=np.number).columns.tolist()
     test_numeric = test_df_raw.select_dtypes(include=np.number).columns.tolist()
     common_numeric = sorted(list(set(train_numeric) & set(test_numeric)))
+
 
     if len(common_numeric) == 0:
         # Fallback: try to convert common columns that look numeric
@@ -836,14 +926,17 @@ else:
                 pass
         common_numeric = candidate
 
+
     if len(common_numeric) == 0:
         st.error("No common numeric columns found even after coercion attempt.")
         st.stop()
+
 
     sample_id_options = ["None"] + common_cols
     sample_id_imp = st.selectbox("Sample ID (optional)", sample_id_options, key="imp_sample_id")
     if sample_id_imp == "None":
         sample_id_imp = None
+
 
     default_X_imp = [
         c for c in st.session_state.get("X_variables", common_numeric)
@@ -851,6 +944,7 @@ else:
     ]
     if not default_X_imp:
         default_X_imp = [c for c in common_numeric if c != sample_id_imp]
+
 
     selected_X_imp = st.multiselect(
         "Predictor variables (X)",
@@ -862,6 +956,7 @@ else:
         st.warning("Select at least one predictor.")
         st.stop()
 
+
     remaining = [c for c in common_cols if c not in selected_X_imp and c != sample_id_imp]
     y_options_imp = ["None"] + remaining
     default_y_imp = 0
@@ -869,9 +964,11 @@ else:
     if saved_y is not None and saved_y in y_options_imp:
         default_y_imp = y_options_imp.index(saved_y)
 
+
     y_imp = st.selectbox("Target variable (y)", y_options_imp, index=default_y_imp, key="imp_y")
     if y_imp == "None":
         y_imp = None
+
 
     # -------------------------------------------------
     # Preprocessing (user choice)
@@ -883,6 +980,7 @@ else:
         selected_X=selected_X_imp,
     )
 
+
     # -------------------------------------------------
     # Confirm import
     # -------------------------------------------------
@@ -891,10 +989,12 @@ else:
         train_raw = train_df_raw.copy()
         test_raw = test_df_raw.copy()
 
+
         if preprocessing_info is not None:
             prep_vars = [v for v in selected_X_imp if v in train_raw.columns and v in test_raw.columns]
             X_train_raw = train_raw[prep_vars].apply(pd.to_numeric, errors="coerce")
             X_test_raw = test_raw[prep_vars].apply(pd.to_numeric, errors="coerce")
+
 
             X_train_proc, fit_params = apply_preprocessing(
                 X_train_raw,
@@ -921,8 +1021,10 @@ else:
                 fit_params=fit_params,
             )
 
+
             train_df = build_full_dataset(train_raw, X_train_proc, prep_vars, X_train_proc.index)
             test_df = build_full_dataset(test_raw, X_test_proc, prep_vars, X_test_proc.index)
+
 
             st.session_state["split_preprocessing_params"] = fit_params
             st.session_state["split_preprocessing_info"] = preprocessing_info
@@ -931,6 +1033,7 @@ else:
             test_df = test_raw
             st.session_state.pop("split_preprocessing_params", None)
             st.session_state.pop("split_preprocessing_info", None)
+
 
         st.session_state["train_dataset"] = train_df
         st.session_state["test_dataset"] = test_df
@@ -942,6 +1045,7 @@ else:
         if y_imp is not None:
             st.session_state["y_variable"] = y_imp
 
+
         st.session_state["split_info"] = {
             "mode": "external_files",
             "n_train": len(train_df),
@@ -952,10 +1056,12 @@ else:
             "preprocessing_applied": preprocessing_info is not None,
         }
 
+
         st.success(
             f"✅ Train & Test imported! Train: {len(train_df)} | Test: {len(test_df)}"
         )
         st.rerun()
+
 
 
 # =====================================================
@@ -965,9 +1071,11 @@ if "train_dataset" in st.session_state and "test_dataset" in st.session_state:
     st.divider()
     st.header("Current split summary")
 
+
     train_df = st.session_state["train_dataset"]
     test_df = st.session_state["test_dataset"]
     info = st.session_state.get("split_info", {})
+
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Train samples", len(train_df))
@@ -977,6 +1085,7 @@ if "train_dataset" in st.session_state and "test_dataset" in st.session_state:
         len(info.get("X_variables", st.session_state.get("X_variables", []))),
     )
     c4.metric("Stratified", "Yes" if info.get("stratified") else "No")
+
 
     # Class distribution
     y_var = info.get("y_variable") or st.session_state.get("y_variable")
@@ -989,12 +1098,14 @@ if "train_dataset" in st.session_state and "test_dataset" in st.session_state:
         dist["Test %"] = (dist["Test"] / dist["Test"].sum() * 100).round(1)
         st.dataframe(dist, use_container_width=True)
 
+
     # Preview
     tab_train, tab_test = st.tabs(["Train preview", "Test preview"])
     with tab_train:
         st.dataframe(train_df.head(10), use_container_width=True)
     with tab_test:
         st.dataframe(test_df.head(10), use_container_width=True)
+
 
     # Download
     st.divider()
@@ -1004,13 +1115,16 @@ if "train_dataset" in st.session_state and "test_dataset" in st.session_state:
         train_df.to_excel(writer, sheet_name="Train", index=True)
         test_df.to_excel(writer, sheet_name="Test", index=True)
 
+
         summary_rows = [{"Item": k, "Value": str(v)} for k, v in info.items()]
         pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Split_Info", index=False)
+
 
         prep_info = st.session_state.get("split_preprocessing_info")
         if prep_info is not None:
             prep_rows = [{"Step": k, "Value": str(v)} for k, v in prep_info.items()]
             pd.DataFrame(prep_rows).to_excel(writer, sheet_name="Preprocessing_Info", index=False)
+
 
     st.download_button(
         "⬇️ Download Train/Test (Excel)",
@@ -1020,6 +1134,7 @@ if "train_dataset" in st.session_state and "test_dataset" in st.session_state:
         type="primary",
         key="download_split",
     )
+
 
     # Clear
     st.divider()
