@@ -294,7 +294,7 @@ with col1:
 with col2:
     solver = st.selectbox(
         "LDA solver",
-        ["svd", "lsqr", "eigen"],
+        ["svd", "eigen"],
         key="lda_bin_solver",
     )
 

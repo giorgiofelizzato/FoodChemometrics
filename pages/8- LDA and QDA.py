@@ -320,7 +320,7 @@ with col2:
 with col3:
     solver = st.selectbox(
         "LDA solver",
-        ["svd", "lsqr", "eigen"],
+        ["svd", "eigen"],
         key="lda_solver",
         disabled=(model_type == "QDA"),
     )
